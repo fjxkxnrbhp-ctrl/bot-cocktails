@@ -5,7 +5,7 @@ import telebot
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-bot = telebot.TeleBot(TOKEN)
+bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 
 app = Flask(__name__)
 
@@ -20,40 +20,51 @@ def guardar(data):
 # -------- MENU --------
 def menu():
     m = ReplyKeyboardMarkup(resize_keyboard=True)
-    m.add(
-        KeyboardButton("📋 Menú"),
-        KeyboardButton("➕ Agregar receta")
-    )
+    m.row("📋 Menú")
+    m.row("➕ Agregar receta", "🗑️ Eliminar receta")
     return m
 
-# -------- START --------
 @bot.message_handler(commands=["start"])
 def start(msg):
-    bot.send_message(msg.chat.id, "🍹 Bot bartender listo", reply_markup=menu())
+    bot.send_message(msg.chat.id, "🍹 Bot listo", reply_markup=menu())
 
-# -------- MENU LIMPIO --------
+# -------- VER MENU --------
 @bot.message_handler(func=lambda m: m.text == "📋 Menú")
-def ver(msg):
+def ver_menu(msg):
     recetas = cargar()
-
     markup = InlineKeyboardMarkup()
-    for nombre in recetas.keys():
-        markup.add(InlineKeyboardButton(nombre, callback_data=nombre))
 
-    # simulamos "limpiar"
-    bot.send_message(msg.chat.id, "\n\n\n📋 MENÚ:", reply_markup=markup)
+    for nombre in recetas:
+        markup.add(InlineKeyboardButton(nombre, callback_data=f"ver_{nombre}"))
 
-# -------- RESPUESTA --------
+    bot.send_message(msg.chat.id, "📋 Elige:", reply_markup=markup)
+
+# -------- ELIMINAR --------
+@bot.message_handler(func=lambda m: m.text == "🗑️ Eliminar receta")
+def eliminar_menu(msg):
+    recetas = cargar()
+    markup = InlineKeyboardMarkup()
+
+    for nombre in recetas:
+        markup.add(InlineKeyboardButton(nombre, callback_data=f"del_{nombre}"))
+
+    bot.send_message(msg.chat.id, "Selecciona para eliminar:", reply_markup=markup)
+
+# -------- CALLBACK --------
 @bot.callback_query_handler(func=lambda call: True)
 def callback(call):
     recetas = cargar()
-    nombre = call.data
+    data = call.data
 
-    if nombre in recetas:
-        r = recetas[nombre]
-        ingredientes = "\n".join([f"- {k}: {v}" for k, v in r["ingredientes"].items()])
+    # VER RECETA
+    if data.startswith("ver_"):
+        nombre = data.replace("ver_", "")
 
-        respuesta = f"""🍹 {nombre.upper()}
+        if nombre in recetas:
+            r = recetas[nombre]
+            ingredientes = "\n".join([f"- {k}: {v}" for k, v in r["ingredientes"].items()])
+
+            texto = f"""<b>{nombre.upper()}</b>
 
 🥃 Ingredientes:
 {ingredientes}
@@ -61,13 +72,37 @@ def callback(call):
 🥤 Vaso: {r["vaso"]}
 ⚙ Método: {r["metodo"]}
 """
-        bot.send_message(call.message.chat.id, respuesta)
+            bot.send_message(call.message.chat.id, texto)
+
+    # PEDIR CONFIRMACION
+    elif data.startswith("del_"):
+        nombre = data.replace("del_", "")
+
+        markup = InlineKeyboardMarkup()
+        markup.add(
+            InlineKeyboardButton("✅ Sí eliminar", callback_data=f"confirm_{nombre}"),
+            InlineKeyboardButton("❌ Cancelar", callback_data="cancel")
+        )
+
+        bot.send_message(call.message.chat.id, f"¿Eliminar {nombre}?", reply_markup=markup)
+
+    # CONFIRMAR ELIMINACION
+    elif data.startswith("confirm_"):
+        nombre = data.replace("confirm_", "")
+
+        if nombre in recetas:
+            del recetas[nombre]
+            guardar(recetas)
+            bot.send_message(call.message.chat.id, "🗑️ Eliminado")
+
+    elif data == "cancel":
+        bot.send_message(call.message.chat.id, "Cancelado")
 
 # -------- AGREGAR --------
 estado = {}
 
 @bot.message_handler(func=lambda m: m.text == "➕ Agregar receta")
-def agregar(msg):
+def iniciar_agregar(msg):
     estado[msg.chat.id] = {"paso": 1}
     bot.send_message(msg.chat.id, "Nombre del cóctel:")
 
@@ -79,20 +114,16 @@ def flujo(msg):
         if user["paso"] == 1:
             user["nombre"] = msg.text.lower()
             user["paso"] = 2
-            bot.send_message(msg.chat.id, "Ingredientes (ej: pisco 4 oz, limón 1 1/2 oz):")
+            bot.send_message(msg.chat.id, "Ingredientes:\nej: pisco 4 oz, limón 1 1/2 oz")
 
         elif user["paso"] == 2:
             ing = {}
-
             partes = msg.text.split(",")
 
             for p in partes:
-                p = p.strip()
-                partes_ing = p.split()
-
-                nombre = " ".join(partes_ing[:-2])
-                cantidad = " ".join(partes_ing[-2:])
-
+                p = p.strip().split()
+                nombre = " ".join(p[:-2])
+                cantidad = " ".join(p[-2:])
                 ing[nombre] = cantidad
 
             user["ingredientes"] = ing
@@ -117,10 +148,10 @@ def flujo(msg):
             guardar(recetas)
             del estado[msg.chat.id]
 
-            bot.send_message(msg.chat.id, "✅ Receta guardada")
+            bot.send_message(msg.chat.id, "✅ Guardado", reply_markup=menu())
 
     except:
-        bot.send_message(msg.chat.id, "⚠️ Ejemplo correcto:\npisco 4 oz, limón 1 1/2 oz, clara 1")
+        bot.send_message(msg.chat.id, "⚠️ Ejemplo:\npisco 4 oz, limón 1 1/2 oz")
 
 # -------- WEBHOOK --------
 @app.route(f"/{TOKEN}", methods=["POST"])
