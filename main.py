@@ -9,7 +9,6 @@ bot = telebot.TeleBot(TOKEN)
 
 app = Flask(__name__)
 
-# ---------- ARCHIVO ----------
 def cargar():
     with open("recetas.json", "r", encoding="utf-8") as f:
         return json.load(f)
@@ -18,32 +17,33 @@ def guardar(data):
     with open("recetas.json", "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
-# ---------- MENU ----------
+# -------- MENU --------
 def menu():
     m = ReplyKeyboardMarkup(resize_keyboard=True)
     m.add(
-        KeyboardButton("📋 Ver cócteles"),
+        KeyboardButton("📋 Menú"),
         KeyboardButton("➕ Agregar receta")
     )
     return m
 
-# ---------- START ----------
+# -------- START --------
 @bot.message_handler(commands=["start"])
 def start(msg):
     bot.send_message(msg.chat.id, "🍹 Bot bartender listo", reply_markup=menu())
 
-# ---------- VER COCTELES (BOTONES) ----------
-@bot.message_handler(func=lambda m: m.text == "📋 Ver cócteles")
+# -------- MENU LIMPIO --------
+@bot.message_handler(func=lambda m: m.text == "📋 Menú")
 def ver(msg):
     recetas = cargar()
-    markup = InlineKeyboardMarkup()
 
+    markup = InlineKeyboardMarkup()
     for nombre in recetas.keys():
         markup.add(InlineKeyboardButton(nombre, callback_data=nombre))
 
-    bot.send_message(msg.chat.id, "Selecciona un cóctel:", reply_markup=markup)
+    # simulamos "limpiar"
+    bot.send_message(msg.chat.id, "\n\n\n📋 MENÚ:", reply_markup=markup)
 
-# ---------- RESPUESTA BOTONES ----------
+# -------- RESPUESTA --------
 @bot.callback_query_handler(func=lambda call: True)
 def callback(call):
     recetas = cargar()
@@ -51,10 +51,7 @@ def callback(call):
 
     if nombre in recetas:
         r = recetas[nombre]
-
-        ingredientes = "\n".join(
-            [f"- {k}: {v}" for k, v in r["ingredientes"].items()]
-        )
+        ingredientes = "\n".join([f"- {k}: {v}" for k, v in r["ingredientes"].items()])
 
         respuesta = f"""🍹 {nombre.upper()}
 
@@ -66,7 +63,7 @@ def callback(call):
 """
         bot.send_message(call.message.chat.id, respuesta)
 
-# ---------- AGREGAR RECETA ----------
+# -------- AGREGAR --------
 estado = {}
 
 @bot.message_handler(func=lambda m: m.text == "➕ Agregar receta")
@@ -82,13 +79,22 @@ def flujo(msg):
         if user["paso"] == 1:
             user["nombre"] = msg.text.lower()
             user["paso"] = 2
-            bot.send_message(msg.chat.id, "Ingredientes (ej: ron:2 oz, limón:1 oz)")
+            bot.send_message(msg.chat.id, "Ingredientes (ej: pisco 4 oz, limón 1 1/2 oz):")
 
         elif user["paso"] == 2:
             ing = {}
-            for i in msg.text.split(","):
-                k, v = i.split(":")
-                ing[k.strip()] = v.strip()
+
+            partes = msg.text.split(",")
+
+            for p in partes:
+                p = p.strip()
+                partes_ing = p.split()
+
+                nombre = " ".join(partes_ing[:-2])
+                cantidad = " ".join(partes_ing[-2:])
+
+                ing[nombre] = cantidad
+
             user["ingredientes"] = ing
             user["paso"] = 3
             bot.send_message(msg.chat.id, "Vaso:")
@@ -114,10 +120,9 @@ def flujo(msg):
             bot.send_message(msg.chat.id, "✅ Receta guardada")
 
     except:
-        bot.send_message(msg.chat.id, "⚠️ Error, intenta de nuevo")
-        del estado[msg.chat.id]
+        bot.send_message(msg.chat.id, "⚠️ Ejemplo correcto:\npisco 4 oz, limón 1 1/2 oz, clara 1")
 
-# ---------- WEBHOOK ----------
+# -------- WEBHOOK --------
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
     bot.process_new_updates([telebot.types.Update.de_json(request.stream.read().decode("utf-8"))])
