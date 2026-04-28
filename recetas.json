@@ -1,8 +1,12 @@
 {
   "piña colada": {
-    "ron": "3 oz",
-    "crema de coco": "1 oz",
-    "jugo de piña": "3 oz",
-    "jarabe de goma": "1 oz"
+    "ingredientes": {
+      "ron": "3 oz",
+      "crema de coco": "1 oz",
+      "jugo de piña": "3 oz",
+      "jarabe de goma": "1 oz"
+    },
+    "vaso": "huracán",
+    "metodo": "licuado"
   }
 }
